@@ -1,0 +1,24 @@
+# Dependencies
+node_modules/
+client/node_modules/
+server/node_modules/
+
+# React build output
+client/build/
+
+# Environment variables
+.env
+.env.local
+.env.production
+
+# PM2 logs
+.pm2/
+logs/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor folders
+.vscode/
+.idea/
