@@ -3,6 +3,8 @@ const { WebSocketServer } = require("ws");
 const cors = require("cors");
 const http = require("http");
 
+const path = require("path");
+
 const app = express();
 app.use(cors());
 app.use(express.json());
@@ -343,6 +345,14 @@ wss.on("connection", (ws, req) => {
 });
 
 app.get("/health", (_req, res) => res.json({ ok: true }));
+
+// Serve React build
+app.use(express.static(path.join(__dirname, "../client/build")));
+
+// Catch-all: send index.html for any unknown route
+app.get("*", (_req, res) => {
+  res.sendFile(path.join(__dirname, "../client/build/index.html"));
+});
 
 const PORT = process.env.PORT || 3001;
 server.listen(PORT, () => {

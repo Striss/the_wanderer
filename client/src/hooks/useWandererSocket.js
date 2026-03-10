@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 
-const WS_URL = process.env.REACT_APP_WS_URL || "ws://localhost:3001";
+const WS_URL = process.env.REACT_APP_WS_URL ||
+  (window.location.protocol === "https:" ? "wss://" : "ws://") + window.location.host;
+
 const RECONNECT_DELAY = 2500;
 
 export function useWandererSocket({ onState, onBoostEvent, onOnlineCount, onChatMsg, onHello, onFeedEvent, onFeedResult, onMilestone, onReset }) {
