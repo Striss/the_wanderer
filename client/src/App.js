@@ -279,7 +279,7 @@ export default function App() {
       <header className="header">
         <div className="title-line">
           <span className="diamond">◆</span>
-          <span className="title">THE WANDERER</span>
+          <span className="title">THE LITTLE WANDERER</span>
           <span className="diamond">◆</span>
         </div>
         <div className="subtitle">A COLLECTIVE JOURNEY</div>
@@ -452,6 +452,28 @@ export default function App() {
         </div>
       )}
 
+      {/* ── ACTIONS (hidden when arrived) ── */}
+      {!arrived && (
+        <div className="actions-row">
+          <div className="action-block">
+            <button className="boost-btn" onClick={boost}>▲ GIVE ENERGY</button>
+            <div className="action-hint">CLICK · SPACE · TAP</div>
+          </div>
+          <div className="action-block">
+            <button
+              className={`feed-btn ${!canFeed ? "depleted" : ""} ${hungerState === "starving" ? "urgent" : ""}`}
+              onClick={feed} disabled={!canFeed}
+            >
+              🍖 FEED
+            </button>
+            <div className="action-hint feed-quota" style={{ color: canFeed ? "#9090b8" : "#ef476f" }}>
+              {canFeed ? `${feedsLeft} of ${DAILY_FEED_MAX} feeds left today` : `all used · resets in ${resetCountdown}`}
+            </div>
+            {feedMsg && <div className="feed-msg">{feedMsg}</div>}
+          </div>
+        </div>
+      )}
+
       {/* ── STATS ── */}
       {!arrived && (
         <div className="stats-row">
@@ -476,27 +498,7 @@ export default function App() {
         </div>
       )}
 
-      {/* ── ACTIONS (hidden when arrived) ── */}
-      {!arrived && (
-        <div className="actions-row">
-          <div className="action-block">
-            <button className="boost-btn" onClick={boost}>▲ GIVE ENERGY</button>
-            <div className="action-hint">CLICK · SPACE · TAP</div>
-          </div>
-          <div className="action-block">
-            <button
-              className={`feed-btn ${!canFeed ? "depleted" : ""} ${hungerState === "starving" ? "urgent" : ""}`}
-              onClick={feed} disabled={!canFeed}
-            >
-              🍖 FEED
-            </button>
-            <div className="action-hint feed-quota" style={{ color: canFeed ? "#9090b8" : "#ef476f" }}>
-              {canFeed ? `${feedsLeft} of ${DAILY_FEED_MAX} feeds left today` : `all used · resets in ${resetCountdown}`}
-            </div>
-            {feedMsg && <div className="feed-msg">{feedMsg}</div>}
-          </div>
-        </div>
-      )}
+
 
       {/* ── LORE PANEL (journey so far, shown while walking) ── */}
       {!arrived && revealedLore.length > 0 && (

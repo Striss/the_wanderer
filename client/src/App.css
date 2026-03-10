@@ -606,3 +606,86 @@ body { display: flex; justify-content: center; }
   font-size: 11px;
   line-height: 2.4;
 }
+
+@media (max-width: 480px) {
+  :root {
+    --chat-w: 160px;
+  }
+
+  .title        { font-size: 11px; letter-spacing: 3px; }
+  .subtitle     { font-size: 7px; letter-spacing: 2px; }
+
+  .hud          { font-size: 7px; }
+  .hud-label    { font-size: 6px; }
+  .hud-value    { font-size: 10px; }
+  .hud-scene    { font-size: 7px; }
+  .hud-state    { font-size: 7px; }
+
+  .meter-labels     { font-size: 7px; }
+  .meter-label-right { font-size: 10px; }
+  .meter-unit       { font-size: 6px; }
+  .meter-sub        { font-size: 7px; }
+
+  .stat-label   { font-size: 7px; }
+  .stat-value   { font-size: 11px; }
+  .progress-pct { font-size: 9px; }
+  .stat-remaining { font-size: 7px; }
+
+  .boost-btn    { font-size: 10px; padding: 13px 28px; }
+  .feed-btn     { font-size: 10px; padding: 13px 28px; }
+  .action-hint  { font-size: 7px; letter-spacing: 2px; }
+
+  .milestone-text { font-size: 9px; }
+  .lore-entry   { font-size: 9px; }
+  .destination-label { font-size: 7px; }
+
+  .chat-text    { font-size: 10px; }
+  .chat-name    { font-size: 7px; }
+
+  .lore         { font-size: 7px; }
+
+  #root { padding: 16px 10px 30px; }
+  .stats-row { gap: 14px; padding: 12px; }
+  .actions-row { gap: 16px; }
+
+  .scene-row {
+    flex-direction: column;
+  }
+
+  .chat-panel.open {
+    width: 100%;
+    min-width: 100%;
+    border-left: 2px solid var(--border);
+    border-top: none;
+    max-height: 280px;
+    max-height: 500px;    /* add this */
+    overflow: hidden;   
+  }
+
+  .chat-panel.closed {
+    width: 100%;
+    min-width: 100%;
+    height: 42px;
+    border-left: 2px solid var(--border);
+    border-top: none;
+    flex-direction: row;
+    align-items: center;
+  }
+
+  .chat-toggle {
+    position: relative;
+    top: auto;
+    left: auto;
+    transform: none;
+  }
+
+  .chat-panel.open .chat-toggle {
+    position: absolute;
+    right: 8px;
+    top: 8px;
+  }
+
+  .chat-header {
+    margin-top: 0;
+  }
+}

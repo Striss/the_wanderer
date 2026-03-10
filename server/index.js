@@ -245,13 +245,6 @@ wss.on("connection", (ws, req) => {
 
   broadcastAll({ type: "ONLINE_COUNT", count: wss.clients.size });
 
-  const joinMsg = {
-    id: Date.now() + Math.random(), type: "system",
-    text: `${ws.username} joined the journey`, ts: Date.now(),
-  };
-  chatHistory = [...chatHistory.slice(-(MAX_CHAT-1)), joinMsg];
-  broadcastAll({ type: "CHAT_MSG", msg: joinMsg });
-
   ws.on("message", (raw) => {
     try {
       const msg = JSON.parse(raw);
@@ -332,13 +325,7 @@ wss.on("connection", (ws, req) => {
 
   ws.on("close", () => {
     state.onlineCount = wss.clients.size;
-    const leaveMsg = {
-      id: Date.now() + Math.random(), type: "system",
-      text: `${ws.username} left`, ts: Date.now(),
-    };
-    chatHistory = [...chatHistory.slice(-(MAX_CHAT-1)), leaveMsg];
     broadcastAll({ type: "ONLINE_COUNT", count: wss.clients.size });
-    broadcastAll({ type: "CHAT_MSG", msg: leaveMsg });
   });
 
   ws.on("error", () => {});
