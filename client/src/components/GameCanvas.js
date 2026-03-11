@@ -178,9 +178,20 @@ export default function GameCanvas({ palette, charState, energy, hungerState, ar
     // ── POPUPS ──
     popupsRef.current.forEach((p) => {
       ctx.globalAlpha = Math.max(0, p.life);
-      ctx.fillStyle = palette.accent;
-      ctx.font = "bold 8px monospace";
-      ctx.fillText(p.text, p.x, p.y);
+      if (p.mine) {
+        // Your own boost — large, centered above character, accent color
+        ctx.font = "bold 14px monospace";
+        ctx.fillStyle = "#f5c97a";
+        ctx.shadowColor = "#f5c97a";
+        ctx.shadowBlur = 8;
+        ctx.fillText(p.text, p.x, p.y);
+        ctx.shadowBlur = 0;
+      } else {
+        // Others' boosts — small, subtle
+        ctx.font = "bold 8px monospace";
+        ctx.fillStyle = palette.accent;
+        ctx.fillText(p.text, p.x, p.y);
+      }
     });
     ctx.globalAlpha = 1;
     onPopupTick?.(dt);

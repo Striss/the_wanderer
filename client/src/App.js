@@ -128,8 +128,9 @@ export default function App() {
     setTotalEnergy(msg.totalEnergy);
     const id = popupIdRef.current++;
     setPopups((prev) => [...prev.slice(-6), {
-      id, x: 75 + Math.random() * 60, y: 185 + Math.random() * 20,
+      id, x: 68, y: 210,
       text: `+${fmtEnergy(msg.gain)}`, life: 1,
+      mine: true,
     }]);
     setBoostFlash(true);
     setTimeout(() => setBoostFlash(false), 130);
@@ -139,6 +140,12 @@ export default function App() {
   const handleBoostEvent = useCallback((msg) => {
     setEnergy(msg.energy);
     setTotalEnergy(msg.totalEnergy);
+    const id = popupIdRef.current++;
+    setPopups((prev) => [...prev.slice(-6), {
+      id, x: 75 + Math.random() * 60, y: 185 + Math.random() * 20,
+      text: `+${fmtEnergy(msg.gain)}`, life: 1,
+      mine: false,
+    }]);
   }, []);
 
   const handleFeedEvent = useCallback((msg) => {
@@ -214,6 +221,7 @@ export default function App() {
 
   useEffect(() => {
     const handler = (e) => {
+      if (e.repeat) return;
       if (e.code === "Space") { e.preventDefault(); boost(); }
       if (e.code === "KeyF")  { e.preventDefault(); feed(); }
     };

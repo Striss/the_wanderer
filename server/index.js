@@ -29,7 +29,7 @@ const BOOST_MAX       = 30;
 
 // ── Hunger ────────────────────────────────────────────────────────────────────
 // Rises from 0→100 in 1 hour (was 4 hours)
-const HUNGER_RATE      = 100 / (1 * 3600);
+const HUNGER_RATE      = 100 / (15 * 60);
 const HUNGER_PER_FEED  = 34;
 const DAILY_FEED_LIMIT = 3;
 
