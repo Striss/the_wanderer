@@ -38,28 +38,18 @@ export default function App() {
   const [boostFlash, setBoostFlash]       = useState(false);
   const [feedFlash, setFeedFlash]         = useState(false);
   const [timeLabel, setTimeLabel]         = useState("");
-  const [username, setUsername]           = useState("");
-  const [chatMessages, setChatMessages]   = useState([]);
-  const [chatOpen, setChatOpen]           = useState(false);
-  const [chatInput, setChatInput]         = useState("");
-  const [unread, setUnread]               = useState(0);
   const [wsConnected, setWsConnected]     = useState(false);
   const [feedsUsed, setFeedsUsed]         = useState(0);
   const [feedsResetAt, setFeedsResetAt]   = useState(null);
   const [feedMsg, setFeedMsg]             = useState("");
 
-  // Milestone lore: list of { km, text } already revealed
-  const [revealedLore, setRevealedLore]   = useState([]);
-  // Active milestone flash: { km, text }
-  const [milestoneFlash, setMilestoneFlash] = useState(null);
-  const milestoneFlashTimer               = useRef(null);
-
-  // Arrival overlay
+  const [revealedLore, setRevealedLore]       = useState([]);
+  const [milestoneFlash, setMilestoneFlash]   = useState(null);
+  const milestoneFlashTimer                   = useRef(null);
   const [showArrivalText, setShowArrivalText] = useState(false);
+  const [speedKmh, setSpeedKmh] = useState(0);
 
   const popupIdRef   = useRef(0);
-  const chatEndRef   = useRef(null);
-  const chatInputRef = useRef(null);
   const feedMsgTimer = useRef(null);
 
   // Palette clock
@@ -73,14 +63,6 @@ export default function App() {
     const iv = setInterval(update, 30000);
     return () => clearInterval(iv);
   }, [arrived]);
-
-  // Auto-scroll chat
-  useEffect(() => {
-    if (chatOpen) {
-      chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
-      setUnread(0);
-    }
-  }, [chatMessages, chatOpen]);
 
   function showFeedMsg(text, duration = 3000) {
     clearTimeout(feedMsgTimer.current);
@@ -107,12 +89,9 @@ export default function App() {
     setOnlineCount(msg.onlineCount);
     setCharState(msg.charState);
     setArrived(msg.arrived ?? false);
-    setUsername(msg.username || "");
     setWsConnected(true);
-    if (msg.chatHistory) setChatMessages(msg.chatHistory);
     setFeedsUsed(msg.feedsUsed ?? 0);
     setFeedsResetAt(msg.feedsResetAt ?? null);
-    // Restore lore for milestones already passed
     if (msg.reachedMilestones?.length) {
       const ALL_LORE = [
         { km: 500,  text: "The wanderer has been walking for a long time. They don't talk about why." },
@@ -140,9 +119,11 @@ export default function App() {
     setOnlineCount(msg.onlineCount);
     setCharState(msg.charState);
     setArrived(msg.arrived ?? false);
+    setSpeedKmh(msg.speedKmh ?? 0);
   }, []);
 
-  const handleBoostEvent = useCallback((msg) => {
+  // MY_BOOST — only fires for the local user, triggers flash
+  const handleMyBoost = useCallback((msg) => {
     setEnergy(msg.energy);
     setTotalEnergy(msg.totalEnergy);
     const id = popupIdRef.current++;
@@ -152,6 +133,12 @@ export default function App() {
     }]);
     setBoostFlash(true);
     setTimeout(() => setBoostFlash(false), 130);
+  }, []);
+
+  // BOOST_EVENT — from anyone, updates energy but no flash
+  const handleBoostEvent = useCallback((msg) => {
+    setEnergy(msg.energy);
+    setTotalEnergy(msg.totalEnergy);
   }, []);
 
   const handleFeedEvent = useCallback((msg) => {
@@ -201,11 +188,6 @@ export default function App() {
 
   const handleOnlineCount = useCallback((count) => setOnlineCount(count), []);
 
-  const handleChatMsg = useCallback((msg) => {
-    setChatMessages((prev) => [...prev.slice(-79), msg]);
-    setUnread((n) => chatOpen ? 0 : n + 1);
-  }, [chatOpen]);
-
   const handlePopupTick = useCallback((dt) => {
     setPopups((prev) =>
       prev.map((p) => ({ ...p, y: p.y - 38 * dt, life: p.life - dt * 1.3 }))
@@ -213,16 +195,16 @@ export default function App() {
     );
   }, []);
 
-  const { sendBoost, sendFeed, sendChat, connected } = useWandererSocket({
-    onHello: handleHello,
-    onState: handleState,
-    onBoostEvent: handleBoostEvent,
-    onFeedEvent: handleFeedEvent,
-    onFeedResult: handleFeedResult,
-    onMilestone: handleMilestone,
-    onReset: handleReset,
-    onOnlineCount: handleOnlineCount,
-    onChatMsg: handleChatMsg,
+  const { sendBoost, sendFeed, connected } = useWandererSocket({
+    onHello:        handleHello,
+    onState:        handleState,
+    onMyBoost:      handleMyBoost,
+    onBoostEvent:   handleBoostEvent,
+    onFeedEvent:    handleFeedEvent,
+    onFeedResult:   handleFeedResult,
+    onMilestone:    handleMilestone,
+    onReset:        handleReset,
+    onOnlineCount:  handleOnlineCount,
   });
 
   useEffect(() => { setWsConnected(connected); }, [connected]);
@@ -230,25 +212,14 @@ export default function App() {
   const boost = useCallback(() => { if (!arrived) sendBoost(); }, [sendBoost, arrived]);
   const feed  = useCallback(() => { if (!arrived) sendFeed();  }, [sendFeed, arrived]);
 
-  const submitChat = useCallback(() => {
-    const text = chatInput.trim();
-    if (!text) return;
-    sendChat(text);
-    setChatInput("");
-  }, [chatInput, sendChat]);
-
   useEffect(() => {
     const handler = (e) => {
-      if (document.activeElement === chatInputRef.current) {
-        if (e.code === "Enter") submitChat();
-        return;
-      }
       if (e.code === "Space") { e.preventDefault(); boost(); }
       if (e.code === "KeyF")  { e.preventDefault(); feed(); }
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [boost, feed, submitChat]);
+  }, [boost, feed]);
 
   // Derived
   const tankDisplayMax  = Math.max(totalEnergy, 50);
@@ -268,9 +239,8 @@ export default function App() {
   const resetCountdown  = feedsResetAt ? fmtCountdown(feedsResetAt - Date.now()) : null;
   const pctToDest       = Math.min(100, (distance / DESTINATION_KM) * 100);
   const kmRemaining     = Math.max(0, DESTINATION_KM - distance);
-  const speedLabel      = charState === "run" ? "9.0 km/h" : charState === "walk" ? "5.0 km/h" : "0 km/h";
-  const burnMultiplier  = 1 + (hunger / 100) * 3;
-  const baseBurn        = charState === "run" ? 0.40 : charState === "walk" ? 0.16 : 0;
+  const speedLabel = charState === "sit" ? "0 km/h" : `${speedKmh} km/h`;  const burnMultiplier  = 1 + (hunger / 100) * 3;
+  const baseBurn        = charState === "run" ? 0.80 : charState === "walk" ? 0.50 : 0;
   const effectiveBurn   = (baseBurn * burnMultiplier).toFixed(2);
 
   return (
@@ -293,9 +263,9 @@ export default function App() {
         </div>
       )}
 
-      {/* ── CANVAS + CHAT ── */}
+      {/* ── CANVAS ── */}
       <div className="scene-row">
-        <div className={`canvas-wrapper ${arrived ? "" : ""}`} onClick={boost}>
+        <div className="canvas-wrapper" onClick={boost}>
           <div className={`boost-overlay ${boostFlash ? "flash" : ""} ${feedFlash ? "feed-flash" : ""}`} />
 
           <GameCanvas
@@ -308,7 +278,6 @@ export default function App() {
             onPopupTick={handlePopupTick}
           />
 
-          {/* Arrival text overlay */}
           {showArrivalText && (
             <div className="arrival-overlay">
               <div className="arrival-text">
@@ -319,7 +288,6 @@ export default function App() {
             </div>
           )}
 
-          {/* Normal HUDs — hidden on arrival */}
           {!arrived && <>
             <div className="hud hud-tr">
               <div className="hud-label">REMAINING</div>
@@ -345,7 +313,6 @@ export default function App() {
             )}
           </>}
 
-          {/* Arrived HUD */}
           {arrived && (
             <div className="hud hud-tl">
               <div className="hud-scene arrived-scene">THE COTTAGE</div>
@@ -353,40 +320,8 @@ export default function App() {
             </div>
           )}
         </div>
-
-        {/* ── CHAT ── */}
-        <div className={`chat-panel ${chatOpen ? "open" : "closed"}`}>
-          <button className="chat-toggle" onClick={() => { setChatOpen((v) => !v); setUnread(0); }}>
-            {chatOpen ? "✕" : "💬"}
-            {!chatOpen && unread > 0 && <span className="unread-badge">{unread > 9 ? "9+" : unread}</span>}
-          </button>
-          {chatOpen && (
-            <>
-              <div className="chat-header">
-                <span>JOURNEY CHAT</span>
-                {username && <span className="chat-username">you: {username}</span>}
-              </div>
-              <div className="chat-messages">
-                {chatMessages.map((m) => (
-                  <div key={m.id} className={`chat-msg ${m.type === "system" ? "system" : "user"}`}>
-                    {m.type === "user" && <span className="chat-name">{m.username}</span>}
-                    <span className="chat-text">{m.text}</span>
-                  </div>
-                ))}
-                <div ref={chatEndRef} />
-              </div>
-              <div className="chat-input-row">
-                <input ref={chatInputRef} className="chat-input" value={chatInput}
-                  onChange={(e) => setChatInput(e.target.value)}
-                  placeholder="say something..." maxLength={120} />
-                <button className="chat-send" onClick={submitChat}>↵</button>
-              </div>
-            </>
-          )}
-        </div>
       </div>
 
-      {/* ── DESTINATION LABEL ── (shows before arrival as mystery) */}
       {!arrived && (
         <div className="destination-label">
           {DESTINATION_LABEL.split("\n").map((line, i) => (
@@ -395,7 +330,6 @@ export default function App() {
         </div>
       )}
 
-      {/* ── ARRIVED: just the lore, no meters ── */}
       {arrived && revealedLore.length > 0 && (
         <div className="lore-scroll arrived-lore">
           {revealedLore.map((m) => (
@@ -404,7 +338,6 @@ export default function App() {
         </div>
       )}
 
-      {/* ── METERS (hidden when arrived) ── */}
       {!arrived && (
         <div className="meters-row">
           <div className="meter-block">
@@ -452,7 +385,6 @@ export default function App() {
         </div>
       )}
 
-      {/* ── ACTIONS (hidden when arrived) ── */}
       {!arrived && (
         <div className="actions-row">
           <div className="action-block">
@@ -474,7 +406,6 @@ export default function App() {
         </div>
       )}
 
-      {/* ── STATS ── */}
       {!arrived && (
         <div className="stats-row">
           <div className="stat-block">
@@ -499,8 +430,6 @@ export default function App() {
       )}
 
 
-
-      {/* ── LORE PANEL (journey so far, shown while walking) ── */}
       {!arrived && revealedLore.length > 0 && (
         <div className="lore-scroll">
           <div className="lore-scroll-title">FRAGMENTS</div>

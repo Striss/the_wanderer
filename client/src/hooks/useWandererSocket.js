@@ -3,48 +3,43 @@ import { useEffect, useRef, useState } from "react";
 const WS_URL = process.env.REACT_APP_WS_URL ||
   (window.location.protocol === "https:" ? "wss://" : "ws://") + window.location.host;
 
-const RECONNECT_DELAY = 2500;
+const RECONNECT_DELAY = 3000;
 
-export function useWandererSocket({ onState, onBoostEvent, onOnlineCount, onChatMsg, onHello, onFeedEvent, onFeedResult, onMilestone, onReset }) {
-  const wsRef          = useRef(null);
-  const reconnectTimer = useRef(null);
-  const mountedRef     = useRef(false);
+export function useWandererSocket({
+  onState, onMyBoost, onBoostEvent, onOnlineCount,
+  onHello, onFeedEvent, onFeedResult, onMilestone, onReset,
+}) {
+  const cbRef     = useRef({});
+  const wsRef     = useRef(null);
   const [connected, setConnected] = useState(false);
 
-  const cbRef = useRef({});
-  cbRef.current = { onState, onBoostEvent, onOnlineCount, onChatMsg, onHello, onFeedEvent, onFeedResult, onMilestone, onReset };
+  cbRef.current = {
+    onState, onMyBoost, onBoostEvent, onOnlineCount,
+    onHello, onFeedEvent, onFeedResult, onMilestone, onReset,
+  };
 
   useEffect(() => {
-    mountedRef.current = true;
+    let reconnectTimer = null;
+    let unmounted = false;
 
     function connect() {
-      if (!mountedRef.current) return;
-      if (wsRef.current && wsRef.current.readyState <= 1) return;
+      if (wsRef.current?.readyState <= 1) return;
 
-      let ws;
-      try { ws = new WebSocket(WS_URL); } catch {
-        reconnectTimer.current = setTimeout(connect, RECONNECT_DELAY);
-        return;
-      }
+      const ws = new WebSocket(WS_URL);
       wsRef.current = ws;
 
-      ws.onopen = () => {
-        if (!mountedRef.current) { ws.close(); return; }
-        setConnected(true);
-        clearTimeout(reconnectTimer.current);
-      };
+      ws.onopen = () => { if (!unmounted) setConnected(true); };
 
       ws.onmessage = (e) => {
-        if (!mountedRef.current) return;
         try {
           const msg = JSON.parse(e.data);
-          const cb = cbRef.current;
+          const cb  = cbRef.current;
           switch (msg.type) {
             case "HELLO":        cb.onHello?.(msg);             break;
             case "STATE":        cb.onState?.(msg);             break;
+            case "MY_BOOST":     cb.onMyBoost?.(msg);           break;
             case "BOOST_EVENT":  cb.onBoostEvent?.(msg);        break;
             case "ONLINE_COUNT": cb.onOnlineCount?.(msg.count); break;
-            case "CHAT_MSG":     cb.onChatMsg?.(msg.msg);       break;
             case "FEED_EVENT":   cb.onFeedEvent?.(msg);         break;
             case "FEED_RESULT":  cb.onFeedResult?.(msg);        break;
             case "MILESTONE":    cb.onMilestone?.(msg);         break;
@@ -55,42 +50,37 @@ export function useWandererSocket({ onState, onBoostEvent, onOnlineCount, onChat
       };
 
       ws.onclose = () => {
-        if (!mountedRef.current) return;
+        if (unmounted) return;
         setConnected(false);
-        reconnectTimer.current = setTimeout(connect, RECONNECT_DELAY);
+        reconnectTimer = setTimeout(connect, RECONNECT_DELAY);
       };
 
-      ws.onerror = () => ws.close();
+      ws.onerror = () => {};
     }
 
     connect();
 
     return () => {
-      mountedRef.current = false;
-      clearTimeout(reconnectTimer.current);
-      const ws = wsRef.current;
-      if (ws) {
-        ws.onclose = null;
-        ws.close();
-        wsRef.current = null;
+      unmounted = true;
+      clearTimeout(reconnectTimer);
+      if (wsRef.current) {
+        wsRef.current.onclose = null;
+        wsRef.current.close();
       }
     };
   }, []);
 
-  const sendBoost = () => {
-    if (wsRef.current?.readyState === WebSocket.OPEN)
+  function sendBoost() {
+    if (wsRef.current?.readyState === 1) {
       wsRef.current.send(JSON.stringify({ type: "BOOST" }));
-  };
+    }
+  }
 
-  const sendFeed = () => {
-    if (wsRef.current?.readyState === WebSocket.OPEN)
+  function sendFeed() {
+    if (wsRef.current?.readyState === 1) {
       wsRef.current.send(JSON.stringify({ type: "FEED" }));
-  };
+    }
+  }
 
-  const sendChat = (text) => {
-    if (wsRef.current?.readyState === WebSocket.OPEN)
-      wsRef.current.send(JSON.stringify({ type: "CHAT", text }));
-  };
-
-  return { sendBoost, sendFeed, sendChat, connected };
+  return { sendBoost, sendFeed, connected };
 }
