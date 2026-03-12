@@ -6,16 +6,13 @@ import "./App.css";
 
 const DESTINATION_KM = 6000;
 const DAILY_FEED_MAX = 3;
-
 const DESTINATION_LABEL = "A cottage at the edge of a coastal cliff.\nSomeone used to live there.\nThe garden still grows.";
 
 function fmtEnergy(n) { return Math.round(n).toLocaleString(); }
-
 function fmtDistance(km) {
   if (km < 1) return (km * 1000).toFixed(0) + " m";
   return km.toFixed(km < 10 ? 2 : 1) + " km";
 }
-
 function fmtCountdown(ms) {
   if (ms <= 0) return "now";
   const h = Math.floor(ms / 3600000);
@@ -26,6 +23,7 @@ function fmtCountdown(ms) {
 
 export default function App() {
   const [energy, setEnergy]               = useState(12);
+  const [energyCap, setEnergyCap]         = useState(500);
   const [totalEnergy, setTotalEnergy]     = useState(12);
   const [hunger, setHunger]               = useState(0);
   const [hungerState, setHungerState]     = useState("full");
@@ -33,6 +31,8 @@ export default function App() {
   const [onlineCount, setOnlineCount]     = useState(0);
   const [charState, setCharState]         = useState("walk");
   const [arrived, setArrived]             = useState(false);
+  const [speedKmh, setSpeedKmh]           = useState(0);
+  const [burnRate, setBurnRate]           = useState(0);
   const [palette, setPalette]             = useState(() => getPaletteForTime());
   const [popups, setPopups]               = useState([]);
   const [boostFlash, setBoostFlash]       = useState(false);
@@ -42,15 +42,12 @@ export default function App() {
   const [feedsUsed, setFeedsUsed]         = useState(0);
   const [feedsResetAt, setFeedsResetAt]   = useState(null);
   const [feedMsg, setFeedMsg]             = useState("");
-
-  const [revealedLore, setRevealedLore]       = useState([]);
-  const [milestoneFlash, setMilestoneFlash]   = useState(null);
-  const milestoneFlashTimer                   = useRef(null);
+  const [revealedLore, setRevealedLore]   = useState([]);
+  const [milestoneFlash, setMilestoneFlash] = useState(null);
+  const milestoneFlashTimer               = useRef(null);
   const [showArrivalText, setShowArrivalText] = useState(false);
-  const [speedKmh, setSpeedKmh] = useState(0);
-
-  const popupIdRef   = useRef(0);
-  const feedMsgTimer = useRef(null);
+  const popupIdRef                        = useRef(0);
+  const feedMsgTimer                      = useRef(null);
 
   // Palette clock
   useEffect(() => {
@@ -82,6 +79,7 @@ export default function App() {
 
   const handleHello = useCallback((msg) => {
     setEnergy(msg.energy);
+    setEnergyCap(msg.energyCap ?? 500);
     setTotalEnergy(msg.totalEnergy);
     setHunger(msg.hunger ?? 0);
     setHungerState(msg.hungerState ?? "full");
@@ -112,6 +110,7 @@ export default function App() {
 
   const handleState = useCallback((msg) => {
     setEnergy(msg.energy);
+    setEnergyCap(msg.energyCap ?? 500);
     setTotalEnergy(msg.totalEnergy);
     setHunger(msg.hunger ?? 0);
     setHungerState(msg.hungerState ?? "full");
@@ -120,15 +119,15 @@ export default function App() {
     setCharState(msg.charState);
     setArrived(msg.arrived ?? false);
     setSpeedKmh(msg.speedKmh ?? 0);
+    setBurnRate(msg.burnRate ?? 0);
   }, []);
 
-  // MY_BOOST — only fires for the local user, triggers flash
   const handleMyBoost = useCallback((msg) => {
     setEnergy(msg.energy);
     setTotalEnergy(msg.totalEnergy);
     const id = popupIdRef.current++;
-    setPopups((prev) => [...prev.slice(-6), {
-      id, x: 68, y: 210,
+    setPopups((prev) => [...prev.slice(-8), {
+      id, x: 62, y: 212,
       text: `+${fmtEnergy(msg.gain)}`, life: 1,
       mine: true,
     }]);
@@ -136,25 +135,36 @@ export default function App() {
     setTimeout(() => setBoostFlash(false), 130);
   }, []);
 
-  // BOOST_EVENT — from anyone, updates energy but no flash
   const handleBoostEvent = useCallback((msg) => {
     setEnergy(msg.energy);
     setTotalEnergy(msg.totalEnergy);
     const id = popupIdRef.current++;
-    setPopups((prev) => [...prev.slice(-6), {
+    setPopups((prev) => [...prev.slice(-8), {
       id, x: 75 + Math.random() * 60, y: 185 + Math.random() * 20,
       text: `+${fmtEnergy(msg.gain)}`, life: 1,
       mine: false,
     }]);
   }, []);
 
+  const handleBoostCapped = useCallback((msg) => {
+    setEnergy(msg.energy);
+    clearTimeout(atCapTimer.current);
+    setAtCap(true);
+    atCapTimer.current = setTimeout(() => setAtCap(false), 2000);
+  }, []);
+
   const handleFeedEvent = useCallback((msg) => {
     setHunger(msg.hunger);
     setHungerState(msg.hungerState);
     const id = popupIdRef.current++;
-    setPopups((prev) => [...prev.slice(-6), {
-      id, x: 130 + Math.random() * 60, y: 185 + Math.random() * 20,
-      text: `🍖 FED!`, life: 1.2,
+    const label = (msg.flag ? `${msg.flag} ` : "") + `${msg.from} fed the wanderer`;
+    setPopups((prev) => [...prev.slice(-8), {
+      id,
+      x: 460 + Math.random() * 30,
+      y: 230,
+      text: label,
+      life: 3.5,
+      feed: true,
     }]);
     setFeedFlash(true);
     setTimeout(() => setFeedFlash(false), 200);
@@ -191,14 +201,20 @@ export default function App() {
     setHungerState("full");
     setDistance(0);
     setCharState("walk");
+    setSpeedKmh(0);
+    setBurnRate(0);
+    setAtCap(false);
   }, []);
 
   const handleOnlineCount = useCallback((count) => setOnlineCount(count), []);
 
   const handlePopupTick = useCallback((dt) => {
     setPopups((prev) =>
-      prev.map((p) => ({ ...p, y: p.y - 38 * dt, life: p.life - dt * 1.3 }))
-          .filter((p) => p.life > 0)
+      prev.map((p) => ({
+        ...p,
+        y:    p.y - (p.feed ? 22 : 38) * dt,
+        life: p.life - dt * (p.feed ? 0.25 : 1.3),
+      })).filter((p) => p.life > 0)
     );
   }, []);
 
@@ -207,6 +223,7 @@ export default function App() {
     onState:        handleState,
     onMyBoost:      handleMyBoost,
     onBoostEvent:   handleBoostEvent,
+    onBoostCapped:  handleBoostCapped,
     onFeedEvent:    handleFeedEvent,
     onFeedResult:   handleFeedResult,
     onMilestone:    handleMilestone,
@@ -217,7 +234,7 @@ export default function App() {
   useEffect(() => { setWsConnected(connected); }, [connected]);
 
   const boost = useCallback(() => { if (!arrived) sendBoost(); }, [sendBoost, arrived]);
-  const feed  = useCallback(() => { if (!arrived) sendFeed();  }, [sendFeed, arrived]);
+  const feed  = useCallback(() => { if (!arrived) sendFeed();  }, [sendFeed,  arrived]);
 
   useEffect(() => {
     const handler = (e) => {
@@ -230,30 +247,26 @@ export default function App() {
   }, [boost, feed]);
 
   // Derived
-  const tankDisplayMax  = Math.max(totalEnergy, 50);
-  const tankFillPct     = Math.min(100, (energy / tankDisplayMax) * 100);
-  const energyColor     = energy > 40 ? "#74c69d" : energy > 10 ? "#ffd166" : "#ef476f";
-  const hungerPct       = Math.round(hunger);
-  const hungerColor     = hungerState === "starving"    ? "#ef476f"
+  const tankFillPct  = Math.min(100, (energy / energyCap) * 100);
+  const energyColor  = energy > energyCap * 0.5 ? "#74c69d"
+                     : energy > energyCap * 0.15 ? "#ffd166" : "#ef476f";
+  const hungerPct    = Math.round(hunger);
+  const hungerColor  = hungerState === "starving"    ? "#ef476f"
     : hungerState === "very-hungry" ? "#ff8c42"
-    : hungerState === "hungry"      ? "#ffd166"
-    : "#74c69d";
-  const hungerLabel     = hungerState === "starving"    ? "★ STARVING"
+    : hungerState === "hungry"      ? "#ffd166" : "#74c69d";
+  const hungerLabel  = hungerState === "starving"    ? "★ STARVING"
     : hungerState === "very-hungry" ? "VERY HUNGRY"
-    : hungerState === "hungry"      ? "HUNGRY"
-    : "WELL FED";
-  const feedsLeft       = DAILY_FEED_MAX - feedsUsed;
-  const canFeed         = feedsLeft > 0 && !arrived;
-  const resetCountdown  = feedsResetAt ? fmtCountdown(feedsResetAt - Date.now()) : null;
-  const pctToDest       = Math.min(100, (distance / DESTINATION_KM) * 100);
-  const kmRemaining     = Math.max(0, DESTINATION_KM - distance);
-  const speedLabel = charState === "sit" ? "0 km/h" : `${speedKmh} km/h`;  const burnMultiplier  = 1 + (hunger / 100) * 3;
-  const baseBurn        = charState === "run" ? 0.80 : charState === "walk" ? 0.50 : 0;
-  const effectiveBurn   = (baseBurn * burnMultiplier).toFixed(2);
+    : hungerState === "hungry"      ? "HUNGRY" : "WELL FED";
+  const feedsLeft    = DAILY_FEED_MAX - feedsUsed;
+  const canFeed      = feedsLeft > 0 && !arrived;
+  const resetCountdown = feedsResetAt ? fmtCountdown(feedsResetAt - Date.now()) : null;
+  const pctToDest    = Math.min(100, (distance / DESTINATION_KM) * 100);
+  const kmRemaining  = Math.max(0, DESTINATION_KM - distance);
+  const speedLabel   = charState === "sit" ? "0 km/h" : `${speedKmh} km/h`;
+  const isFull = energy >= energyCap - 2;
 
   return (
     <div className="app">
-      {/* ── HEADER ── */}
       <header className="header">
         <div className="title-line">
           <span className="diamond">◆</span>
@@ -263,7 +276,6 @@ export default function App() {
         <div className="subtitle">A COLLECTIVE JOURNEY</div>
       </header>
 
-      {/* ── MILESTONE FLASH ── */}
       {milestoneFlash && (
         <div className="milestone-flash">
           <div className="milestone-km">{fmtDistance(milestoneFlash.km)} reached</div>
@@ -271,7 +283,6 @@ export default function App() {
         </div>
       )}
 
-      {/* ── CANVAS ── */}
       <div className="scene-row">
         <div className="canvas-wrapper" onClick={boost}>
           <div className={`boost-overlay ${boostFlash ? "flash" : ""} ${feedFlash ? "feed-flash" : ""}`} />
@@ -319,6 +330,7 @@ export default function App() {
                 {hungerState === "starving" ? "🍖 STARVING — FEED ME!" : "🍖 VERY HUNGRY"}
               </div>
             )}
+     
           </>}
 
           {arrived && (
@@ -353,9 +365,10 @@ export default function App() {
               <span className="meter-label-left">
                 ENERGY TANK
                 {energy < 10 && <span className="low-warn blink"> !! LOW</span>}
+                {isFull && <span className="full-warn"> ▲ FULL</span>}
               </span>
               <span className="meter-label-right" style={{ color: energyColor }}>
-                {fmtEnergy(energy)} <span className="meter-unit">units</span>
+                {fmtEnergy(energy)}<span className="meter-unit"> / {fmtEnergy(energyCap)}</span>
               </span>
             </div>
             <div className="meter-track">
@@ -366,7 +379,9 @@ export default function App() {
             </div>
             <div className="meter-sub">
               Total contributed: <span style={{ color: "#888" }}>{fmtEnergy(totalEnergy)}</span>
-              {charState !== "sit" && <span style={{ color: "#555" }}> · burning {effectiveBurn}/sec</span>}
+              {charState !== "sit" && burnRate > 0 && (
+                <span style={{ color: "#555" }}> · burning {burnRate}/sec</span>
+              )}
             </div>
           </div>
 
@@ -385,8 +400,8 @@ export default function App() {
             </div>
             <div className="meter-sub">
               {hungerState !== "full"
-                ? <span style={{ color: hungerColor }}>burn ×{burnMultiplier.toFixed(1)} — energy draining faster!</span>
-                : <span style={{ color: "#555" }}>burn ×1.0 — well fed</span>
+                ? <span style={{ color: hungerColor }}>speed reduced · energy burning faster</span>
+                : <span style={{ color: "#555" }}>well fed · normal burn rate</span>
               }
             </div>
           </div>
@@ -396,7 +411,12 @@ export default function App() {
       {!arrived && (
         <div className="actions-row">
           <div className="action-block">
-            <button className="boost-btn" onClick={boost}>▲ GIVE ENERGY</button>
+            <button
+              className={`boost-btn ${isFull ? "capped" : ""}`}
+              onClick={boost}
+            >
+              {isFull ? "▲ TANK FULL" : "▲ GIVE ENERGY"}
+            </button>
             <div className="action-hint">CLICK · SPACE · TAP</div>
           </div>
           <div className="action-block">
@@ -453,6 +473,15 @@ export default function App() {
         THE WANDERER WALKS WHETHER YOU WATCH OR NOT.
         <br />
         ENERGY KEEPS THEM MOVING · FOOD KEEPS THEM STRONG.
+                <br /><br />
+        <a
+          className="kofi-link"
+          href="https://ko-fi.com/heyjustingray"
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          ◇ leave something for the journey
+        </a>
       </footer>
     </div>
   );

@@ -1,18 +1,19 @@
 const express = require("express");
 const { WebSocketServer } = require("ws");
-const cors = require("cors");
-const http = require("http");
-const path = require("path");
-const fs   = require("fs");
+const cors   = require("cors");
+const http   = require("http");
+const https  = require("https");
+const path   = require("path");
+const fs     = require("fs");
 
 const app = express();
 app.use(cors());
 app.use(express.json());
 
 const server = http.createServer(app);
-const wss = new WebSocketServer({ server });
+const wss    = new WebSocketServer({ server });
 
-// ─── CONSTANTS ───────────────────────────────────────────────────────────────
+// ─── CONSTANTS ────────────────────────────────────────────────────────────────
 const WALK_SPEED_KMH  = 5.04;
 const RUN_SPEED_KMH   = 9.0;
 const WALK_SPEED_KMS  = WALK_SPEED_KMH / 3600;
@@ -27,14 +28,25 @@ const DESTINATION_KM  = 6000;
 const BOOST_WINDOW_MS = 10000;
 const BOOST_MAX       = 30;
 
+// ── Energy cap + online-scaled burn ──────────────────────────────────────────
+// Energy is hard-capped. Burn scales with online count so busy periods drain it.
+const ENERGY_CAP      = 99999;
+
+// Base burn rates (per second)
+const BASE_BURN_WALK  = 0.15;
+const BASE_BURN_RUN   = 0.25;
+
+// Each extra online user adds this much to burn rate (beyond the first)
+const BURN_PER_USER   = 0.02;
+const MAX_USER_BURN   = 4.0;  // cap the online-scaled bonus so it can't go infinite
+
 // ── Hunger ────────────────────────────────────────────────────────────────────
-// Rises from 0→100 in 1 hour (was 4 hours)
-const HUNGER_RATE      = 100 / (15 * 60);
+const HUNGER_RATE      = 100 / (15 * 60); // full→starving in 15 minutes
 const HUNGER_PER_FEED  = 34;
 const DAILY_FEED_LIMIT = 3;
 
 function hungerBurnMultiplier(hunger) {
-  return 1 + (hunger / 100) * 3;
+  return 1 + (hunger / 100) * 3; // 1× to 4×
 }
 
 function hungerSpeedMultiplier(hunger) {
@@ -44,17 +56,50 @@ function hungerSpeedMultiplier(hunger) {
   return 0.45;
 }
 
-// ── Energy-based speed boost ──────────────────────────────────────────────────
-// The more collective energy, the faster the wanderer moves
 function energySpeedMultiplier(energy) {
-  if (energy < 100)  return 1.0;
-  if (energy < 300)  return 1.2;
-  if (energy < 600)  return 1.5;
-  if (energy < 1000) return 1.8;
-  return 2.5;
+  if (energy < 10000)  return 1.0;
+  if (energy < 20000)  return 2.0;
+  if (energy < 30000)  return 4.0;
+  if (energy < 40000)  return 7.0;
+  if (energy < 50000)  return 11.0;
+  if (energy < 60000)  return 16.0;
+  if (energy < 70000)  return 22.0;
+  if (energy < 80000)  return 29.0;
+  if (energy < 90000)  return 37.0;
+  return 46.0;
 }
 
-// ─── SHARED STATE ─────────────────────────────────────────────────────────────
+// Scaled burn: base + per-user bonus, capped
+function onlineBurnBonus(onlineCount) {
+  const extra = Math.max(0, onlineCount - 1) * BURN_PER_USER;
+  return Math.min(extra, MAX_USER_BURN);
+}
+
+// ─── GEO / FLAG ───────────────────────────────────────────────────────────────
+function countryFlag(code) {
+  if (!code || code.length !== 2) return "";
+  return code.toUpperCase().split("").map(c =>
+    String.fromCodePoint(0x1F1E6 - 65 + c.charCodeAt(0))
+  ).join("");
+}
+
+function getFlag(ip, cb) {
+  if (!ip || ip === "unknown" || ip.startsWith("127.") ||
+      ip.startsWith("192.168.") || ip === "::1") {
+    return cb("");
+  }
+  const url = `https://ip-api.com/json/${ip}?fields=countryCode`;
+  https.get(url, (res) => {
+    let data = "";
+    res.on("data", chunk => data += chunk);
+    res.on("end", () => {
+      try { cb(countryFlag(JSON.parse(data).countryCode)); }
+      catch { cb(""); }
+    });
+  }).on("error", () => cb(""));
+}
+
+// ─── MILESTONES ───────────────────────────────────────────────────────────────
 const MILESTONES = [
   { km: 500,  text: "The wanderer has been walking for a long time. They don't talk about why." },
   { km: 1200, text: "Someone once told them: if you ever feel lost, just keep moving. The world is smaller than it seems." },
@@ -67,6 +112,7 @@ const MILESTONES = [
   { km: 6000, text: "The gate is open. It was always left open." },
 ];
 
+// ─── STATE ────────────────────────────────────────────────────────────────────
 let state = {
   energy:      12,
   totalEnergy: 12,
@@ -94,9 +140,7 @@ function loadState() {
       reachedMilestones = new Set(saved.reachedMilestones ?? []);
       console.log(`State restored — ${state.distance.toFixed(2)} km traveled`);
     }
-  } catch (e) {
-    console.log("No saved state, starting fresh");
-  }
+  } catch (e) { console.log("No saved state, starting fresh"); }
 }
 
 function saveState() {
@@ -107,9 +151,7 @@ function saveState() {
       hunger:            state.hunger,
       reachedMilestones: [...reachedMilestones],
     }));
-  } catch (e) {
-    console.error("Failed to save state:", e);
-  }
+  } catch (e) { console.error("Failed to save state:", e); }
 }
 
 loadState();
@@ -141,9 +183,9 @@ function hungerLevel(hunger) {
 }
 
 // ─── TICK ─────────────────────────────────────────────────────────────────────
-const TICK_MS = 200;
+const TICK_MS        = 200;
 const ARRIVAL_HOLD_MS = 90000;
-let arrivalTimer = null;
+let arrivalTimer     = null;
 
 function doReset() {
   state.energy      = 12;
@@ -171,6 +213,7 @@ function tick() {
   state.hungerState = hungerLevel(state.hunger);
 
   const starving = state.hunger >= 100;
+  const burnBonus = onlineBurnBonus(state.onlineCount);
 
   let speed    = 0;
   let baseBurn = 0;
@@ -178,11 +221,11 @@ function tick() {
   if (!starving && state.energy >= RUN_THRESHOLD) {
     state.charState = "run";
     speed    = RUN_SPEED_KMS;
-    baseBurn = 0.80;  // faster burn (was 0.40)
+    baseBurn = BASE_BURN_RUN + burnBonus;
   } else if (!starving && state.energy > WALK_THRESHOLD) {
     state.charState = "walk";
     speed    = WALK_SPEED_KMS;
-    baseBurn = 0.50;  // faster burn (was 0.16)
+    baseBurn = BASE_BURN_WALK + burnBonus;
   } else {
     state.charState = "sit";
     speed    = 0;
@@ -196,6 +239,10 @@ function tick() {
   state.energy   = Math.max(0, state.energy - baseBurn * burnMult * dt);
   state.distance = Math.min(DESTINATION_KM, state.distance + speed * speedMult * energyMult * dt);
 
+  const baseSpeedKmh      = state.charState === "run"  ? RUN_SPEED_KMH
+                          : state.charState === "walk" ? WALK_SPEED_KMH : 0;
+  const effectiveSpeedKmh = parseFloat((baseSpeedKmh * speedMult * energyMult).toFixed(1));
+
   // ── Milestones ──
   for (const m of MILESTONES) {
     if (!reachedMilestones.has(m.km) && state.distance >= m.km) {
@@ -205,19 +252,15 @@ function tick() {
       if (isArrival) {
         state.arrived   = true;
         state.charState = "sit";
-        arrivalTimer = setTimeout(doReset, ARRIVAL_HOLD_MS);
+        arrivalTimer    = setTimeout(doReset, ARRIVAL_HOLD_MS);
       }
     }
   }
 
-  const baseSpeedKmh = state.charState === "run"  ? RUN_SPEED_KMH
-                     : state.charState === "walk" ? WALK_SPEED_KMH
-                     : 0;
-  const effectiveSpeedKmh = parseFloat((baseSpeedKmh * speedMult * energyMult).toFixed(1));
-
   broadcastAll({
     type:          "STATE",
     energy:        Math.round(state.energy),
+    energyCap:     ENERGY_CAP,
     totalEnergy:   Math.round(state.totalEnergy),
     hunger:        parseFloat(state.hunger.toFixed(1)),
     hungerState:   state.hungerState,
@@ -227,6 +270,7 @@ function tick() {
     arrived:       state.arrived,
     destinationKm: DESTINATION_KM,
     speedKmh:      effectiveSpeedKmh,
+    burnRate:      parseFloat((baseBurn * burnMult).toFixed(2)),
   });
 }
 
@@ -248,9 +292,8 @@ function guestName() {
 wss.on("connection", (ws, req) => {
   const ip = (req.headers["x-forwarded-for"] || req.socket.remoteAddress || "unknown")
     .split(",")[0].trim();
-  ws.clientIp = ip;
-  ws.username = guestName();
-
+  ws.clientIp  = ip;
+  ws.username  = guestName();
   ws.boostCount       = 0;
   ws.boostWindowStart = Date.now();
 
@@ -261,6 +304,7 @@ wss.on("connection", (ws, req) => {
   ws.send(JSON.stringify({
     type:              "HELLO",
     energy:            Math.round(state.energy),
+    energyCap:         ENERGY_CAP,
     totalEnergy:       Math.round(state.totalEnergy),
     hunger:            parseFloat(state.hunger.toFixed(1)),
     hungerState:       state.hungerState,
@@ -285,19 +329,26 @@ wss.on("connection", (ws, req) => {
       // ── BOOST ──
       if (msg.type === "BOOST") {
         const now = Date.now();
-
         if (now - ws.boostWindowStart > BOOST_WINDOW_MS) {
           ws.boostCount       = 0;
           ws.boostWindowStart = now;
         }
-
         if (ws.boostCount >= BOOST_MAX) return;
-
         ws.boostCount++;
-        state.energy += BOOST_GAIN;
+
+        // Hard cap — silently reject if at cap
+        if (state.energy >= ENERGY_CAP) {
+          ws.send(JSON.stringify({
+            type:      "BOOST_CAPPED",
+            energyCap: ENERGY_CAP,
+            energy:    Math.round(state.energy),
+          }));
+          return;
+        }
+
+        state.energy      = Math.min(ENERGY_CAP, state.energy + BOOST_GAIN);
         state.totalEnergy += BOOST_GAIN;
 
-        // Send MY_BOOST privately to the sender so only they flash
         ws.send(JSON.stringify({
           type:        "MY_BOOST",
           gain:        BOOST_GAIN,
@@ -305,7 +356,6 @@ wss.on("connection", (ws, req) => {
           totalEnergy: Math.round(state.totalEnergy),
         }));
 
-        // Broadcast updated energy to everyone (no flash)
         broadcastAll({
           type:        "BOOST_EVENT",
           gain:        BOOST_GAIN,
@@ -330,14 +380,18 @@ wss.on("connection", (ws, req) => {
           return;
         }
         rec.count++;
-        state.hunger = Math.max(0, state.hunger - HUNGER_PER_FEED);
+        state.hunger      = Math.max(0, state.hunger - HUNGER_PER_FEED);
         state.hungerState = hungerLevel(state.hunger);
 
-        broadcastAll({
-          type:        "FEED_EVENT",
-          hunger:      parseFloat(state.hunger.toFixed(1)),
-          hungerState: state.hungerState,
-          from:        ws.username,
+        const feederName = ws.username;
+        getFlag(ws.clientIp, (flag) => {
+          broadcastAll({
+            type:        "FEED_EVENT",
+            hunger:      parseFloat(state.hunger.toFixed(1)),
+            hungerState: state.hungerState,
+            from:        feederName,
+            flag,
+          });
         });
 
         ws.send(JSON.stringify({
@@ -364,7 +418,6 @@ wss.on("connection", (ws, req) => {
 
 // ─── REST ─────────────────────────────────────────────────────────────────────
 app.get("/health", (_req, res) => res.json({ ok: true }));
-
 app.use(express.static(path.join(__dirname, "../client/build")));
 app.get("*", (_req, res) => {
   res.sendFile(path.join(__dirname, "../client/build/index.html"));
@@ -373,8 +426,8 @@ app.get("*", (_req, res) => {
 const PORT = process.env.PORT || 3001;
 server.listen(PORT, () => {
   console.log(`🐾 Wanderer server on :${PORT}`);
-  console.log(`   Burn: walk=${0.50}/s run=${0.80}/s`);
-  console.log(`   Hunger: full→starving in 1 hour`);
-  console.log(`   Speed scales with energy up to 2.5×`);
-  console.log(`   Boost limit: ${BOOST_MAX} per ${BOOST_WINDOW_MS/1000}s per connection`);
+  console.log(`   Energy cap: ${ENERGY_CAP}`);
+  console.log(`   Burn: walk=${BASE_BURN_WALK}/s run=${BASE_BURN_RUN}/s + ${BURN_PER_USER}/s per extra user`);
+  console.log(`   Hunger: full→starving in 15 min`);
+  console.log(`   Boost limit: ${BOOST_MAX} per ${BOOST_WINDOW_MS/1000}s`);
 });

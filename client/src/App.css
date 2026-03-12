@@ -607,6 +607,64 @@ body { display: flex; justify-content: center; }
   line-height: 2.4;
 }
 
+/* ── RAIN HUD ────────────────────────────────────────────────────────────── */
+.hud-rain-warn {
+  position: absolute;
+  bottom: 36px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 7px;
+  color: #8ab0cc;
+  letter-spacing: 2px;
+  pointer-events: none;
+  text-shadow: 0 0 8px rgba(138, 176, 204, 0.6);
+}
+.rain-hud {
+  margin-left: 4px;
+  opacity: 0.8;
+}
+
+/* ── ENERGY CAP STATES ───────────────────────────────────────────────────── */
+.full-warn {
+  color: #74c69d;
+  font-size: 7px;
+  letter-spacing: 1px;
+  margin-left: 6px;
+}
+.boost-btn.capped {
+  color: var(--dim);
+  border-color: var(--border2);
+  cursor: default;
+  opacity: 0.6;
+}
+.hud-cap-warn {
+  position: absolute;
+  bottom: 36px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 7px;
+  color: #74c69d;
+  letter-spacing: 2px;
+  pointer-events: none;
+  animation: fadeout 2s forwards;
+}
+@keyframes fadeout {
+  0%   { opacity: 1; }
+  60%  { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+.kofi-link {
+  color: var(--muted);
+  text-decoration: none;
+  font-size: 7px;
+  letter-spacing: 3px;
+  transition: color 0.2s;
+}
+.kofi-link:hover {
+  color: var(--accent);
+}
+
 @media (max-width: 480px) {
   :root {
     --chat-w: 160px;
