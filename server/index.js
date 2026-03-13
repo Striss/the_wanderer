@@ -34,14 +34,12 @@ const ENERGY_CAP      = 99999;
 
 // Base burn rates (per second)
 const BASE_BURN_WALK  = 0.15;
-const BASE_BURN_RUN   = 0.25;
-
-// Each extra online user adds this much to burn rate (beyond the first)
+const BASE_BURN_RUN   = 0.35;
 const BURN_PER_USER   = 0.02;
-const MAX_USER_BURN   = 4.0;  // cap the online-scaled bonus so it can't go infinite
+const MAX_USER_BURN   = 4.0;
 
 // ── Hunger ────────────────────────────────────────────────────────────────────
-const HUNGER_RATE      = 100 / (15 * 60); // full→starving in 15 minutes
+const HUNGER_RATE      = 100 / (10 * 60); // full→starving in 15 minutes
 const HUNGER_PER_FEED  = 34;
 const DAILY_FEED_LIMIT = 3;
 
@@ -67,6 +65,19 @@ function energySpeedMultiplier(energy) {
   if (energy < 80000)  return 29.0;
   if (energy < 90000)  return 37.0;
   return 46.0;
+}
+
+function energyBurnMultiplier(energy) {
+  if (energy < 10000)  return 1.0;
+  if (energy < 20000)  return 2.5;
+  if (energy < 30000)  return 5.0;
+  if (energy < 40000)  return 9.0;
+  if (energy < 50000)  return 14.0;
+  if (energy < 60000)  return 20.0;
+  if (energy < 70000)  return 27.0;
+  if (energy < 80000)  return 35.0;
+  if (energy < 90000)  return 44.0;
+  return 55.0;
 }
 
 // Scaled burn: base + per-user bonus, capped
@@ -236,7 +247,7 @@ function tick() {
   const speedMult  = hungerSpeedMultiplier(state.hunger);
   const energyMult = energySpeedMultiplier(state.energy);
 
-  state.energy   = Math.max(0, state.energy - baseBurn * burnMult * dt);
+  state.energy = Math.max(0, state.energy - baseBurn * burnMult * energyBurnMultiplier(state.energy) * dt);
   state.distance = Math.min(DESTINATION_KM, state.distance + speed * speedMult * energyMult * dt);
 
   const baseSpeedKmh      = state.charState === "run"  ? RUN_SPEED_KMH
@@ -270,8 +281,7 @@ function tick() {
     arrived:       state.arrived,
     destinationKm: DESTINATION_KM,
     speedKmh:      effectiveSpeedKmh,
-    burnRate:      parseFloat((baseBurn * burnMult).toFixed(2)),
-  });
+    burnRate:      parseFloat((baseBurn * burnMult * energyBurnMultiplier(state.energy)).toFixed(2)),  });
 }
 
 setInterval(tick, TICK_MS);
