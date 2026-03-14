@@ -6,6 +6,7 @@ const RECONNECT_DELAY = 3000;
 export function useWandererSocket({
   onHello, onState, onMyBoost, onBoostEvent, onBoostCapped,
   onFeedEvent, onFeedResult, onMilestone, onReset, onOnlineCount,
+  onWeather, onChatMessage, onChatBlocked, onOnlineList,
 }) {
   const cbRef  = useRef({});
   const wsRef  = useRef(null);
@@ -14,6 +15,7 @@ export function useWandererSocket({
   cbRef.current = {
     onHello, onState, onMyBoost, onBoostEvent, onBoostCapped,
     onFeedEvent, onFeedResult, onMilestone, onReset, onOnlineCount,
+    onWeather, onChatMessage, onChatBlocked, onOnlineList,
   };
 
   useEffect(() => {
@@ -32,16 +34,23 @@ export function useWandererSocket({
           const msg = JSON.parse(e.data);
           const cb  = cbRef.current;
           switch (msg.type) {
-            case "HELLO":        cb.onHello?.(msg);             break;
-            case "STATE":        cb.onState?.(msg);             break;
-            case "MY_BOOST":     cb.onMyBoost?.(msg);           break;
-            case "BOOST_EVENT":  cb.onBoostEvent?.(msg);        break;
-            case "BOOST_CAPPED": cb.onBoostCapped?.(msg);       break;
-            case "FEED_EVENT":   cb.onFeedEvent?.(msg);         break;
-            case "FEED_RESULT":  cb.onFeedResult?.(msg);        break;
-            case "MILESTONE":    cb.onMilestone?.(msg);         break;
-            case "RESET":        cb.onReset?.(msg);             break;
-            case "ONLINE_COUNT": cb.onOnlineCount?.(msg.count); break;
+            case "HELLO":
+              if (msg.raining !== undefined) cb.onWeather?.(msg.raining);
+              cb.onHello?.(msg);
+              break;
+            case "STATE":        cb.onState?.(msg);              break;
+            case "MY_BOOST":     cb.onMyBoost?.(msg);            break;
+            case "BOOST_EVENT":  cb.onBoostEvent?.(msg);         break;
+            case "BOOST_CAPPED": cb.onBoostCapped?.(msg);        break;
+            case "FEED_EVENT":   cb.onFeedEvent?.(msg);          break;
+            case "FEED_RESULT":  cb.onFeedResult?.(msg);         break;
+            case "MILESTONE":    cb.onMilestone?.(msg);          break;
+            case "RESET":        cb.onReset?.(msg);              break;
+            case "ONLINE_COUNT": cb.onOnlineCount?.(msg.count);  break;
+            case "WEATHER":      cb.onWeather?.(msg.raining);    break;
+            case "CHAT_MESSAGE": cb.onChatMessage?.(msg);        break;
+            case "CHAT_BLOCKED": cb.onChatBlocked?.(msg);        break;
+            case "ONLINE_LIST":  cb.onOnlineList?.(msg.users);   break;
             default: break;
           }
         } catch {}
@@ -65,14 +74,17 @@ export function useWandererSocket({
   }, []);
 
   function sendBoost() {
-    if (wsRef.current?.readyState === 1)
-      wsRef.current.send(JSON.stringify({ type: "BOOST" }));
+    if (wsRef.current?.readyState === 1) wsRef.current.send(JSON.stringify({ type: "BOOST" }));
   }
-
   function sendFeed() {
-    if (wsRef.current?.readyState === 1)
-      wsRef.current.send(JSON.stringify({ type: "FEED" }));
+    if (wsRef.current?.readyState === 1) wsRef.current.send(JSON.stringify({ type: "FEED" }));
+  }
+  function sendChat(text) {
+    if (wsRef.current?.readyState === 1) wsRef.current.send(JSON.stringify({ type: "CHAT", text }));
+  }
+  function sendGetOnline() {
+    if (wsRef.current?.readyState === 1) wsRef.current.send(JSON.stringify({ type: "GET_ONLINE" }));
   }
 
-  return { sendBoost, sendFeed, connected };
+  return { sendBoost, sendFeed, sendChat, sendGetOnline, connected };
 }

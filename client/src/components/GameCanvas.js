@@ -22,7 +22,7 @@ function generateGroundTiles() {
   }));
 }
 
-export default function GameCanvas({ palette, charState, energy, hungerState, arrived, popups, onPopupTick }) {
+export default function GameCanvas({ palette, charState, energy, hungerState, arrived, popups, onPopupTick, raining, activeCheer }) {
   const canvasRef      = useRef(null);
   const scrollRef      = useRef({ ground: 0, hill1: 0, hill2: 0 });
   const animRef        = useRef(null);
@@ -35,6 +35,10 @@ export default function GameCanvas({ palette, charState, energy, hungerState, ar
   const charStateRef   = useRef(charState);
   const energyRef      = useRef(energy);
   const popupsRef      = useRef(popups);
+  const rainingRef     = useRef(raining);
+  const rainParticles  = useRef([]);
+  const activecheerRef  = useRef(activeCheer);
+  const heartParticles  = useRef([]);
 
   useEffect(() => { hungerStateRef.current = hungerState; }, [hungerState]);
   useEffect(() => { arrivedRef.current = arrived; },        [arrived]);
@@ -42,6 +46,8 @@ export default function GameCanvas({ palette, charState, energy, hungerState, ar
   useEffect(() => { charStateRef.current = charState; },    [charState]);
   useEffect(() => { energyRef.current = energy; },          [energy]);
   useEffect(() => { popupsRef.current = popups; },          [popups]);
+  useEffect(() => { rainingRef.current = raining; }, [raining]);
+  useEffect(() => { activecheerRef.current = activeCheer; }, [activeCheer]);
 
   useEffect(() => {
     staticRef.current = {
@@ -153,6 +159,37 @@ export default function GameCanvas({ palette, charState, energy, hungerState, ar
       }
     });
 
+    // ── RAIN ──
+    if (rainingRef.current) {
+      // Darken the sky slightly
+      ctx.fillStyle = "rgba(20, 20, 40, 0.25)";
+      ctx.fillRect(0, 0, W, H);
+
+      // Spawn drops up to max
+      while (rainParticles.current.length < 80) {
+        rainParticles.current.push({
+          x:      Math.random() * W,
+          y:      Math.random() * H,
+          speed:  180 + Math.random() * 80,
+          length: 8 + Math.random() * 6,
+        });
+      }
+
+      ctx.strokeStyle = "rgba(174, 194, 224, 0.45)";
+      ctx.lineWidth = 1;
+      rainParticles.current.forEach(p => {
+        p.y += p.speed * dt;
+        p.x -= p.speed * 0.15 * dt;
+        if (p.y > H) { p.y = 0; p.x = Math.random() * W; }
+        ctx.beginPath();
+        ctx.moveTo(p.x, p.y);
+        ctx.lineTo(p.x - p.length * 0.15, p.y + p.length);
+        ctx.stroke();
+      });
+    } else {
+      rainParticles.current = [];
+    }
+
     // ── CHARACTER ──
     const charX = 80;
     const charY = groundY - CHAR_HEIGHT - 2;
@@ -161,12 +198,38 @@ export default function GameCanvas({ palette, charState, energy, hungerState, ar
         * (charState === "run" ? 3.5 : 2);
     drawCharacter(ctx, charState, ca.frame, charX, charY, palette, bounce, hungerStateRef.current);
 
+
+    // ── HEARTS ──
+    if (activecheerRef.current) {
+      if (Math.random() < 0.15) {
+        heartParticles.current.push({
+          x:    charX + Math.random() * 16 - 8,
+          y:    charY - 4,
+          vy:   -(30 + Math.random() * 20),
+          life: 1.0,
+        });
+      }
+      heartParticles.current = heartParticles.current.filter(h => h.life > 0);
+      heartParticles.current.forEach(h => {
+        h.y    += h.vy * dt;
+        h.vy   *= 0.95;
+        h.life -= dt * 0.8;
+        ctx.globalAlpha = Math.max(0, h.life);
+        ctx.fillStyle   = "#e07090";
+        ctx.font        = "8px monospace";
+        ctx.fillText("♡", h.x, h.y);
+      });
+      ctx.globalAlpha = 1;
+    } else {
+      heartParticles.current = [];
+    }
+
     // ── POPUPS ──
     popupsRef.current.forEach((p) => {
       ctx.globalAlpha = Math.max(0, p.life);
       if (p.mine) {
         // Your own boost — large, glowing, fixed above character
-        ctx.font = "bold 16px monospace";
+        ctx.font = "bold 18px monospace";
         ctx.fillStyle = "#f5c97a";
         ctx.shadowColor = "#f5c97a";
         ctx.shadowBlur = 10;
