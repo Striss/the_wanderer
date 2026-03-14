@@ -30,17 +30,17 @@ const BOOST_MAX       = 100;
 const ENERGY_CAP      = 99999;
 const BASE_BURN_WALK  = 0.05;
 const BASE_BURN_RUN   = 0.10;
-const BURN_PER_USER   = 0.002;
+const BURN_PER_USER   = 0.008;
 const MAX_USER_BURN   = 0.5;
 
-const HUNGER_RATE      = 100 / (20 * 60);
+const HUNGER_RATE      = 100 / (15 * 60);
 const HUNGER_PER_FEED  = 34;
 const DAILY_FEED_LIMIT = 4;
 
-const RAIN_CHANCE_PER_MIN  = 0.08;
-const RAIN_MIN_DURATION_MS = 3 * 60000;
-const RAIN_MAX_DURATION_MS = 12 * 60000;
-const RAIN_BURN_BONUS      = 1.5;
+const RAIN_CHANCE_PER_MIN  = 0.04;
+const RAIN_MIN_DURATION_MS = 2 * 60000;
+const RAIN_MAX_DURATION_MS = 6 * 60000;
+const RAIN_BURN_BONUS      = 2.0;
 const RAIN_SPEED_MULT      = 0.5;
 
 // ── Chat ──────────────────────────────────────────────────────────────────────
@@ -108,13 +108,13 @@ function energyBurnMultiplier(energy) {
   if (energy < 10000) return 1.0;
   if (energy < 20000) return 1.5;
   if (energy < 30000) return 2.0;
-  if (energy < 40000) return 2.5;
-  if (energy < 50000) return 3.5;
-  if (energy < 60000) return 4.5;
-  if (energy < 70000) return 6.0;
-  if (energy < 80000) return 8.0;
-  if (energy < 90000) return 11.0;
-  return 15.0;
+  if (energy < 40000) return 3.5;
+  if (energy < 50000) return 5.0;
+  if (energy < 60000) return 7.5;
+  if (energy < 70000) return 10.5;
+  if (energy < 80000) return 14.0;
+  if (energy < 90000) return 16.5;
+  return 18.0;
 }
 
 function onlineBurnBonus(onlineCount) {
@@ -127,20 +127,6 @@ function countryFlag(code) {
   return code.toUpperCase().split("").map(c =>
     String.fromCodePoint(0x1F1E6 - 65 + c.charCodeAt(0))
   ).join("");
-}
-
-function getFlag(ip, cb) {
-  if (!ip || ip === "unknown" || ip.startsWith("127.") ||
-      ip.startsWith("192.168.") || ip === "::1") return cb("");
-  const url = `https://ip-api.com/json/${ip}?fields=countryCode`;
-  https.get(url, (res) => {
-    let data = "";
-    res.on("data", chunk => data += chunk);
-    res.on("end", () => {
-      try { cb(countryFlag(JSON.parse(data).countryCode)); }
-      catch { cb(""); }
-    });
-  }).on("error", () => cb(""));
 }
 
 // ─── MILESTONES ───────────────────────────────────────────────────────────────
@@ -313,7 +299,12 @@ wss.on("connection", (ws, req) => {
   ws.chatWindowStart  = Date.now();
   ws.totalBoosts      = 0;
   ws.totalFeeds       = 0;
+  ws.flag             = "";
 
+  const cfCountry = req.headers["cf-ipcountry"];
+  ws.flag = (cfCountry && cfCountry !== "XX") ? countryFlag(cfCountry) : "";
+  if (ws.flag) console.log(`Flag: ${ip} → ${ws.flag}`);
+  
   state.onlineCount = wss.clients.size;
   const feedRec = getFeedRecord(ip);
 
@@ -405,10 +396,7 @@ wss.on("connection", (ws, req) => {
         state.hunger      = Math.max(0, state.hunger - HUNGER_PER_FEED);
         state.hungerState = hungerLevel(state.hunger);
 
-        const feederName = ws.username;
-        getFlag(ws.clientIp, (flag) => {
-          broadcastAll({ type: "FEED_EVENT", hunger: parseFloat(state.hunger.toFixed(1)), hungerState: state.hungerState, from: feederName, flag });
-        });
+        broadcastAll({ type: "FEED_EVENT", hunger: parseFloat(state.hunger.toFixed(1)), hungerState: state.hungerState, from: ws.username, flag: ws.flag });
 
         ws.send(JSON.stringify({ type: "FEED_RESULT", success: true, hunger: parseFloat(state.hunger.toFixed(1)), hungerState: state.hungerState, feedsUsed: rec.count, feedsLimit: DAILY_FEED_LIMIT, feedsResetAt: rec.resetAt }));
       }
